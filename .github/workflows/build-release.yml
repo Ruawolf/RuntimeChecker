@@ -1,0 +1,61 @@
+name: ReleaseBuild
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - closed
+
+jobs:
+  build:
+    runs-on: windows-latest
+    if: github.event.pull_request.merged == true
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.x"
+
+      - name: Build x86
+        run: |
+          cd RuntimeChecker
+          dotnet publish RuntimeChecker.csproj --runtime win-x86 --output "bin/publish/" /p:Configuration="Release" /p:Platform="x86" /p:PublishAot=false /p:SelfContained=true /p:PublishSingleFile=true /p:PublishReadyToRun=false /p:PublishTrimmed=true
+
+      - name: Build x64
+        run: |
+          cd RuntimeChecker
+          dotnet publish RuntimeChecker.csproj --runtime win-x64 --output "bin/publish/" /p:Configuration="Release" /p:Platform="x64" /p:PublishAot=true
+
+      - name: Zip Compression(Linux)
+        if: runner.os == 'Linux'
+        run: |
+          cd RuntimeChecker/bin/publish
+          zip RuntimeChecker_Win32 RuntimeChecker_x86.exe
+          zip RuntimeChecker_Win64 RuntimeChecker_x64.exe
+
+      - name: Zip Compression(Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cd RuntimeChecker/bin/publish
+          Compress-Archive -Path ./RuntimeChecker_x86.exe -DestinationPath ./RuntimeChecker_Win32.zip
+          Compress-Archive -Path ./RuntimeChecker_x64.exe -DestinationPath ./RuntimeChecker_Win64.zip
+
+      - name: Create Tag
+        run: |
+          git tag ${{ github.event.pull_request.title }}
+          git push origin ${{ github.event.pull_request.title }}
+
+      - name: Release
+        uses: softprops/action-gh-release@v0.1.15
+        with:
+          tag_name: ${{ github.event.pull_request.title }}
+          body: ${{ github.event.pull_request.body }}
+          files: |
+            RuntimeChecker/bin/publish/RuntimeChecker_Win32.zip
+            RuntimeChecker/bin/publish/RuntimeChecker_Win64.zip
